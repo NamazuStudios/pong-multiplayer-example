@@ -19,6 +19,7 @@ namespace Elements.Crossfire
         public event Action<string, NetworkStats> OnNetworkStatsUpdated;
         public event Action<string, string> OnConnectionError;
         public event Action<string, ConnectionState> OnConnectionStateChanged;
+        public bool Initialized { get; private set; }
 
         [SerializeField] private NetworkTransport webSocketTransport; // Your custom WebSocket NetworkTransport        
 
@@ -33,6 +34,8 @@ namespace Elements.Crossfire
             OnNetworkStatsUpdated?.Invoke("", new());
             OnConnectionError?.Invoke("", "");
             OnConnectionStateChanged("", ConnectionState.Connected);
+
+            Initialized = true;
         }
 
         public void BeginConnection(string peerId, bool isOfferer)
@@ -71,6 +74,7 @@ namespace Elements.Crossfire
         public void Shutdown()
         {
             Debug.Log("[WebSocketTransport] Shutting down");
+            Initialized = false;
         }
 
         public NetworkStats GetNetworkStats(string peerId)

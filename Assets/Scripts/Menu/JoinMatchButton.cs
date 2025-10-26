@@ -15,7 +15,12 @@ public class JoinMatchButton : MonoBehaviour
     {
         this.viewController = viewController;
         this.match = match;
-        this.text.text = $"Join match {match.Id}";
+        this.text.text = $"Match: {match.Id} ({match.Status})";
+
+        if(match.Status != MultiMatch.StatusEnum.OPEN)
+        {
+            GetComponent<UnityEngine.UI.Button>().interactable = false;
+        }
     }
 
     public void OnClick()

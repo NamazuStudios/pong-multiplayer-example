@@ -105,6 +105,7 @@ namespace Elements.Crossfire
             peerConnections.Clear();
             dataChannels.Clear();
             readyPeers.Clear();
+            events.Clear();
 
             //  Clear stats
             ClearStatsData();
@@ -169,7 +170,7 @@ namespace Elements.Crossfire
         {
             if (!readyPeers.Contains(clientId))
             {
-                logger.LogWarning($"[Transport.Send] Peer {clientId} not ready yet, skipping send.");
+                logger.Log($"[Transport.Send] Peer {clientId} not ready yet, skipping send.");
                 return;
             }
 

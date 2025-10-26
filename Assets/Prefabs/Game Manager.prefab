@@ -81,3 +81,5 @@ MonoBehaviour:
   clientScoreText: {fileID: 0}
   hostName: {fileID: 0}
   clientName: {fileID: 0}
+  gameOverView: {fileID: 0}
+  scoreToWin: 1

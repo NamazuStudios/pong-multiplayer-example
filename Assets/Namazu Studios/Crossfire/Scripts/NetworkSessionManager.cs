@@ -81,7 +81,7 @@ namespace Elements.Crossfire
             }
             else if (Instance != this)
             {
-                logger.LogWarning("Another instance already exists. Destroying duplicate.");
+                logger.Log("Another instance already exists. Destroying duplicate.");
                 Destroy(gameObject);
             }
         }
@@ -118,6 +118,11 @@ namespace Elements.Crossfire
             if (!isInitialized)
             {
                 InitializeComponents();
+            }
+            else if(!TransportAdapter.Initialized)
+            {
+                // Reinitialize transport
+                TransportAdapter.Initialize(networkManager);
             }
 
             // Connect to signaling server

@@ -16,6 +16,7 @@ namespace Elements.Crossfire
         event Action<string, NetworkStats> OnNetworkStatsUpdated;
         event Action<string, string> OnConnectionError;
         event Action<string, ConnectionState> OnConnectionStateChanged;
+        bool Initialized { get; }
 
         void Initialize(NetworkManager networkManager);
 

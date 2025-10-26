@@ -18,6 +18,7 @@ namespace Elements.Crossfire
         public event Action<string, NetworkStats> OnNetworkStatsUpdated;
         public event Action<string, string> OnConnectionError;
         public event Action<string, ConnectionState> OnConnectionStateChanged;
+        public bool Initialized { get; private set; }
 
         [SerializeField] private WebRtcTransport transport;
         [SerializeField] private float statsUpdateInterval = 2f;
@@ -61,6 +62,8 @@ namespace Elements.Crossfire
 
             statsUpdateCoroutine = StartCoroutine(UpdateNetworkStats());            
             qualityMonitorCoroutine = StartCoroutine(MonitorConnectionQuality());
+
+            Initialized = true;
         }
 
         public void SetSignalingClient(ISignalingClient signalingClient, NetworkSessionConfig sessionConfig)
@@ -166,6 +169,8 @@ namespace Elements.Crossfire
             peerQualities.Clear();
             peerStates.Clear();
             lastStatsUpdate.Clear();
+
+            Initialized = false;
         }
 
         public NetworkStats GetNetworkStats(string peerId)

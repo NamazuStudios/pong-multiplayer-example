@@ -124,7 +124,7 @@ public class GameManager : NetworkBehaviour
 
     private void ReturnToMenu()
     {
-        NetworkSessionManager.Instance.EndSession();
+        NetworkSessionManager.Instance.LeaveMatch();
 
         SceneManager.LoadScene("Login");
     }

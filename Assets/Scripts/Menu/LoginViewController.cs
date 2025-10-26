@@ -48,9 +48,6 @@ public class LoginViewController : MonoBehaviour, IViewController
     [SerializeField]
     private TMPro.TMP_Text createAccountErrorText;
 
-    [SerializeField]
-    private NetworkSessionManager sessionManager;
-
     // IViewController Events
     public event Action OnBack;
     public event Action OnNext;

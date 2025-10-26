@@ -187,8 +187,9 @@ namespace Elements.Crossfire
         {
             intentionalClose = true;
             ws?.Close();
+            outboundQueue.Clear();
 
-            if(reconnectCoroutine != null)
+            if (reconnectCoroutine != null)
                 StopCoroutine(reconnectCoroutine);
         }       
 
