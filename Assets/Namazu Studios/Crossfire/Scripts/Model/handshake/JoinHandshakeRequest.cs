@@ -25,42 +25,42 @@ namespace Elements.Crossfire.Model
             return type;
         }
 
-        public string getVersion()
+        public string GetVersion()
         {
             return version;
         }
 
-        public void setVersion(string version)
+        public void SetVersion(string version)
         {
             this.version = version;
         }
 
-        public string getProfileId()
+        public string GetProfileId()
         {
             return profileId;
         }
 
-        public void setProfileId(string profileId)
+        public void SetProfileId(string profileId)
         {
             this.profileId = profileId;
         }
 
-        public string getMatchId()
+        public string GetMatchId()
         {
             return matchId;
         }
 
-        public void setMatchId(string matchId)
+        public void SetMatchId(string matchId)
         {
             this.matchId = matchId;
         }
 
-        public string getSessionKey()
+        public string GetSessionKey()
         {
             return sessionKey;
         }
 
-        public void setSessionKey(string sessionKey)
+        public void SetSessionKey(string sessionKey)
         {
             this.sessionKey = sessionKey;
         }

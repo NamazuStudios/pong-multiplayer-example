@@ -3,7 +3,7 @@ namespace Elements.Crossfire
 {
     public class Logger
     {
-        public static bool LoggingEnabled;
+        public static LoggerLevel LogLevel;
 
         private string className;
 
@@ -14,20 +14,27 @@ namespace Elements.Crossfire
 
         public void Log(string message)
         {
-            if (LoggingEnabled)
+            if (LogLevel == LoggerLevel.Debug)
                 UnityEngine.Debug.Log($"[{className}] {message}");
         }
 
         public void LogWarning(string message)
         {
-            if (LoggingEnabled)
+            if (LogLevel <= LoggerLevel.Warning)
                 UnityEngine.Debug.LogWarning($"[{className}] {message}");
         }
 
         public void LogError(string message)
         {
-            if (LoggingEnabled)
+            if (LogLevel <= LoggerLevel.Error)
                 UnityEngine.Debug.LogError($"[{className}] {message}");
         }
+    }
+    
+    public enum LoggerLevel
+    {
+        Debug = 0,
+        Warning = 1,
+        Error = 2
     }
 }

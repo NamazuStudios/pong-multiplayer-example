@@ -10,6 +10,6 @@ namespace Elements.Crossfire.Model
          * Gets the match ID of the connected match.
          * @return the match id
          */
-        string getMatchId();
+        string GetMatchId();
     }
 }

@@ -1,9 +1,11 @@
-﻿using UnityEngine;
+using UnityEngine;
 using Unity.Netcode;
 using Unity.WebRTC;
 using System;
 using System.Collections;
 using System.Collections.Generic;
+using System.Collections.Concurrent;
+using System.Linq;
 using Newtonsoft.Json.Linq;
 
 namespace Elements.Crossfire
@@ -21,15 +23,21 @@ namespace Elements.Crossfire
         public bool Initialized { get; private set; }
 
         [SerializeField] private WebRtcTransport transport;
-        [SerializeField] private float statsUpdateInterval = 2f;
-        [SerializeField] private float qualityCheckInterval = 1f;
+        [SerializeField] private float statsUpdateInterval = CrossfireConstants.AdapterStatsInterval;
+        [SerializeField] private float qualityCheckInterval = CrossfireConstants.QualityCheckInterval;
+        [SerializeField] private int consecutivePoorSamplesBeforeError = CrossfireConstants.PoorQualitySamplesBeforeError;
 
-        private Dictionary<string, NetworkStats> peerStats = new();
+        private ConcurrentDictionary<string, NetworkStats> peerStats = new();
         private Dictionary<string, ConnectionQuality> peerQualities = new();
         private Dictionary<string, ConnectionState> peerStates = new();
         private Dictionary<string, DateTime> lastStatsUpdate = new();
         private Coroutine statsUpdateCoroutine;
         private Coroutine qualityMonitorCoroutine;
+
+        // Hysteresis counters for error events
+        private readonly Dictionary<string, int> _poorQualityCount = new();
+        private readonly Dictionary<string, int> _highLatencyCount = new();
+        private readonly Dictionary<string, int> _highLossCount = new();
 
         private Dictionary<string, ulong> profileToNgoId = new();
         private Dictionary<ulong, string> ngoIdToProfile = new();
@@ -40,6 +48,12 @@ namespace Elements.Crossfire
 
         public void Initialize(NetworkManager networkManager)
         {
+            // Guard against double-subscription if re-initialized
+            if (Initialized)
+            {
+                Shutdown();
+            }
+
             if (transport == null)
                 transport = GetComponent<WebRtcTransport>();
 
@@ -60,7 +74,7 @@ namespace Elements.Crossfire
 
             transport.StartStatsCollection();
 
-            statsUpdateCoroutine = StartCoroutine(UpdateNetworkStats());            
+            statsUpdateCoroutine = StartCoroutine(UpdateNetworkStats());
             qualityMonitorCoroutine = StartCoroutine(MonitorConnectionQuality());
 
             Initialized = true;
@@ -169,18 +183,21 @@ namespace Elements.Crossfire
             peerQualities.Clear();
             peerStates.Clear();
             lastStatsUpdate.Clear();
+            _poorQualityCount.Clear();
+            _highLatencyCount.Clear();
+            _highLossCount.Clear();
 
             Initialized = false;
         }
 
         public NetworkStats GetNetworkStats(string peerId)
         {
-            return peerStats.TryGetValue(peerId, out var stats) ? stats : default;
+            return peerStats.GetValueOrDefault(peerId);
         }
 
         public ConnectionQuality GetConnectionQuality(string peerId)
         {
-            return peerQualities.TryGetValue(peerId, out var quality) ? quality : ConnectionQuality.Poor;
+            return peerQualities.GetValueOrDefault(peerId, ConnectionQuality.Poor);
         }
 
         private IEnumerator UpdateNetworkStats()
@@ -189,10 +206,10 @@ namespace Elements.Crossfire
             {
                 yield return new WaitForSeconds(statsUpdateInterval);
 
-                foreach (var kvp in profileToNgoId)
+                foreach (var kvp in profileToNgoId.ToList())
                 {
-                    string profileId = kvp.Key;
-                    ulong ngoId = kvp.Value;
+                    var profileId = kvp.Key;
+                    var ngoId = kvp.Value;
 
                     if (transport.IsPeerReady(ngoId))
                     {
@@ -207,12 +224,12 @@ namespace Elements.Crossfire
             while (true)
             {
                 yield return new WaitForSeconds(qualityCheckInterval);
-            
-                foreach (var kvp in profileToNgoId)
+
+                foreach (var kvp in profileToNgoId.ToList())
                 {
-                    string profileId = kvp.Key;
-                    ulong ngoId = kvp.Value;
-                
+                    var profileId = kvp.Key;
+                    var ngoId = kvp.Value;
+
                     if (transport.IsPeerReady(ngoId))
                     {
                         CheckForConnectionIssues(profileId, ngoId);
@@ -248,13 +265,13 @@ namespace Elements.Crossfire
 
         private ConnectionQuality CalculateConnectionQuality(NetworkStats stats)
         {
-            if (stats.latency > 200f || stats.packetLoss > 0.05f)
+            if (stats.latency > CrossfireConstants.LatencyPoorMs || stats.packetLoss > CrossfireConstants.PacketLossPoor)
                 return ConnectionQuality.Poor;
 
-            if (stats.latency > 100f || stats.packetLoss > 0.02f)
+            if (stats.latency > CrossfireConstants.LatencyFairMs || stats.packetLoss > CrossfireConstants.PacketLossFair)
                 return ConnectionQuality.Fair;
 
-            if (stats.latency > 50f || stats.packetLoss > 0.01f)
+            if (stats.latency > CrossfireConstants.LatencyGoodMs || stats.packetLoss > CrossfireConstants.PacketLossGood)
                 return ConnectionQuality.Good;
 
             return ConnectionQuality.Excellent;
@@ -262,12 +279,12 @@ namespace Elements.Crossfire
 
         private ulong GetOrCreateNgoId(string profileId)
         {
-            if (!profileToNgoId.TryGetValue(profileId, out var ngoId))
-            {
-                ngoId = NetworkIdMapper.DeterministicClientId(profileId, sessionConfig.matchId);
-                profileToNgoId[profileId] = ngoId;
-                ngoIdToProfile[ngoId] = profileId;
-            }
+            if (profileToNgoId.TryGetValue(profileId, out var ngoId)) 
+                return ngoId;
+            
+            ngoId = NetworkIdMapper.DeterministicClientId(profileId, sessionConfig.matchId);
+            profileToNgoId[profileId] = ngoId;
+            ngoIdToProfile[ngoId] = profileId;
 
             return ngoId;
         }
@@ -293,7 +310,7 @@ namespace Elements.Crossfire
 
             logger.Log($"Sending offer: {msg}");
 
-            signalingClient?.SendWSMessage(msg);
+            signalingClient?.Dispatch(msg);
         }
 
         private void HandleSendAnswer(ulong to, RTCSessionDescription answer)
@@ -316,7 +333,7 @@ namespace Elements.Crossfire
 
             logger.Log($"Sending answer: {msg}");
 
-            signalingClient?.SendWSMessage(msg);
+            signalingClient?.Dispatch(msg);
         }
 
         private void HandleSendIce(ulong to, RTCIceCandidate candidate)
@@ -340,7 +357,7 @@ namespace Elements.Crossfire
 
             logger.Log($"Sending ICE candidate: {msg}");
 
-            signalingClient?.SendWSMessage(msg);
+            signalingClient?.Dispatch(msg);
         }
 
         private void HandleDataChannelReady(ulong ngoId)
@@ -372,9 +389,9 @@ namespace Elements.Crossfire
                     OnConnectionStateChanged?.Invoke(profileId, newState);
                 }
 
-                // Existing disconnect logic
-                if (state == RTCIceConnectionState.Failed ||
-                    state == RTCIceConnectionState.Disconnected)
+                // Only fire OnPeerDisconnected for permanent failure, not transient Disconnected
+                // (Disconnected can recover; Failed is terminal)
+                if (state == RTCIceConnectionState.Failed)
                 {
                     OnPeerDisconnected?.Invoke(profileId);
                 }
@@ -404,12 +421,22 @@ namespace Elements.Crossfire
                 {
                     peerQualities[profileId] = newQuality;
                     OnConnectionQualityChanged?.Invoke(profileId, newQuality);
+                }
 
-                    // Fire connection error event for very poor quality
-                    if (newQuality == ConnectionQuality.Poor && oldQuality != ConnectionQuality.Poor)
+                // Fire connection error only after N consecutive poor quality samples (hysteresis)
+                if (newQuality == ConnectionQuality.Poor)
+                {
+                    _poorQualityCount.TryGetValue(profileId, out var poorCount);
+                    poorCount++;
+                    _poorQualityCount[profileId] = poorCount;
+                    if (poorCount == consecutivePoorSamplesBeforeError)
                     {
                         OnConnectionError?.Invoke(profileId, $"Connection quality degraded to Poor (latency: {networkStats.latency:F0}ms, packet loss: {networkStats.packetLoss * 100:F1}%)");
                     }
+                }
+                else
+                {
+                    _poorQualityCount[profileId] = 0;
                 }
             }
         }
@@ -421,15 +448,36 @@ namespace Elements.Crossfire
                 var latency = statsProvider.GetPeerLatency(ngoId);
                 var packetLoss = statsProvider.GetPeerPacketLoss(ngoId);
 
-                // Check for severe connection issues
-                if (latency > 500f)
+                // Check for severe latency with hysteresis
+                if (latency > CrossfireConstants.LatencySevereMs)
                 {
-                    OnConnectionError?.Invoke(profileId, $"High latency detected: {latency:F0}ms");
+                    _highLatencyCount.TryGetValue(profileId, out var count);
+                    count++;
+                    _highLatencyCount[profileId] = count;
+                    if (count == consecutivePoorSamplesBeforeError)
+                    {
+                        OnConnectionError?.Invoke(profileId, $"High latency detected: {latency:F0}ms");
+                    }
+                }
+                else
+                {
+                    _highLatencyCount[profileId] = 0;
                 }
 
-                if (packetLoss > 0.1f) // More than 10% packet loss
+                // Check for severe packet loss with hysteresis
+                if (packetLoss > CrossfireConstants.PacketLossSevere)
                 {
-                    OnConnectionError?.Invoke(profileId, $"High packet loss detected: {packetLoss * 100:F1}%");
+                    _highLossCount.TryGetValue(profileId, out var count);
+                    count++;
+                    _highLossCount[profileId] = count;
+                    if (count == consecutivePoorSamplesBeforeError)
+                    {
+                        OnConnectionError?.Invoke(profileId, $"High packet loss detected: {packetLoss * 100:F1}%");
+                    }
+                }
+                else
+                {
+                    _highLossCount[profileId] = 0;
                 }
 
                 // Check for connection timeout (no stats update in a while)

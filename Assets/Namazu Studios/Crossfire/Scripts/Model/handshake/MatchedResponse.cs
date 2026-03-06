@@ -11,6 +11,9 @@ namespace Elements.Crossfire.Model
         [JsonProperty]
         private string matchId;
 
+        [JsonProperty] 
+        private string profileId;
+        
         public MessageType GetMessageType()
         {
             return MessageType.MATCHED;
@@ -21,14 +24,24 @@ namespace Elements.Crossfire.Model
          *
          * @return the matched id
          */
-        public string getMatchId()
+        public string GetMatchId()
         {
             return matchId;
         }
 
-        public void setMatchId(string matchId)
+        public void SetMatchId(string matchId)
         {
             this.matchId = matchId;
+        }
+
+        public string GetProfileId()
+        {
+            return profileId;
+        }
+
+        public void SetProfileId(string profileId)
+        {
+            this.profileId = profileId;
         }
 
     }

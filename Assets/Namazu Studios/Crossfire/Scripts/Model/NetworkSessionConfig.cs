@@ -1,5 +1,6 @@
 ﻿using UnityEngine;
 using System;
+using Elements.Crossfire;
 
 namespace Elements.Crossfire.Model
 {
@@ -9,7 +10,7 @@ namespace Elements.Crossfire.Model
     {
         [Header("Network Config")]
         public string serverHost = "ws://localhost:8080/app/ws/crossfire";
-        public float reconnectDelay = 5f;
+        public float reconnectDelay = CrossfireConstants.ReconnectDelay;
         public bool autoReconnect = true;
 
         [Header("For Debugging")]

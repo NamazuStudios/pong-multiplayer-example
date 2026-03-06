@@ -1,4 +1,4 @@
-﻿using UnityEngine;
+using UnityEngine;
 using Unity.Netcode;
 using System;
 using System.Linq;
@@ -9,7 +9,7 @@ namespace Elements.Crossfire
     using Model;
 
     [DefaultExecutionOrder(-10)]
-    public class NetworkSessionManager : MonoBehaviour
+    public partial class NetworkSessionManager : MonoBehaviour
     {
         // Singleton pattern for persistence across scenes
         public static NetworkSessionManager Instance { get; private set; }
@@ -23,7 +23,7 @@ namespace Elements.Crossfire
         [SerializeField] private NetworkSessionConfig sessionConfig;
         [SerializeField] private bool useWebRTC = true;
         [SerializeField] private bool persistAcrossScenes = true;
-        [SerializeField] private bool loggingEnabled = false;
+        [SerializeField] private LoggerLevel loggerLevel = LoggerLevel.Debug;
 
         // Session state tracking
         public NetworkSessionState State { get; private set; } = NetworkSessionState.Disconnected;
@@ -46,45 +46,19 @@ namespace Elements.Crossfire
         // Events with state information
         public event Action<NetworkSessionState> OnSessionStateChanged;
         public event Action<string> OnMatchJoined;
+        public event Action<string> OnMatchLeft;
         public event Action<string, bool> OnHostChanged;
         public event Action<List<PlayerInfo>> OnPlayerListUpdated;
         public event Action<PlayerInfo> OnPlayerJoined;
         public event Action<PlayerInfo, string> OnPlayerLeft;
         public event Action OnAllPlayersConnected;
         public event Action<string> OnConnectionError;
+        public event Action<string> OnSignalingError;
 
         // Initialization state
-        private bool isInitialized = false;
+        private bool isInitialized;
 
-        private Logger logger = LoggerFactory.GetLogger("NetworkSessionManager");
-
-        private void Awake()
-        {
-            // Singleton pattern with scene persistence
-            if (Instance == null)
-            {
-                Instance = this;
-                Logger.LoggingEnabled = loggingEnabled;
-
-                // DontDestroyOnLoad only works on root game objects, not children
-                if (persistAcrossScenes && transform.parent == null)
-                {
-                    DontDestroyOnLoad(gameObject);
-                    logger.Log("Marked as persistent across scenes");
-                }
-
-                // Initialize if the networkManager is discoverable
-                if (networkManager != null || FindAnyObjectByType<NetworkManager>() != null)
-                {
-                    InitializeComponents();
-                }
-            }
-            else if (Instance != this)
-            {
-                logger.Log("Another instance already exists. Destroying duplicate.");
-                Destroy(gameObject);
-            }
-        }
+        private readonly Logger logger = LoggerFactory.GetLogger("NetworkSessionManager");
 
 #region PUBLIC API
 
@@ -201,14 +175,14 @@ namespace Elements.Crossfire
             SetSessionState(NetworkSessionState.FindingMatch);
 
             var request = new FindHandshakeRequest();
-            request.setProfileId(sessionConfig.profileId);
-            request.setSessionKey(sessionConfig.sessionToken);
-            request.setConfiguration(configurationName);
+            request.SetProfileId(sessionConfig.profileId);
+            request.SetSessionKey(sessionConfig.sessionToken);
+            request.SetConfiguration(configurationName);
 
             logger.Log($"Finding/creating match: '{configurationName}'");
 
             // SendMessage will automatically queue if signaling isn't ready yet
-            SignalingClient.SendWSMessage(request.ToJsonString<FindHandshakeRequest>());
+            SignalingClient.Dispatch(request.ToJsonString<FindHandshakeRequest>());
         }
 
         /// <summary>
@@ -232,14 +206,14 @@ namespace Elements.Crossfire
             SetSessionState(NetworkSessionState.JoiningMatch);
 
             var request = new JoinHandshakeRequest();
-            request.setMatchId(matchId);
-            request.setProfileId(sessionConfig.profileId);
-            request.setSessionKey(sessionConfig.sessionToken);
+            request.SetMatchId(matchId);
+            request.SetProfileId(sessionConfig.profileId);
+            request.SetSessionKey(sessionConfig.sessionToken);
 
             logger.Log($"Joining match: '{matchId}'");
 
             // SendMessage will automatically queue if signaling isn't ready yet
-            SignalingClient.SendWSMessage(request.ToJsonString<JoinHandshakeRequest>());
+            SignalingClient.Dispatch(request.ToJsonString<JoinHandshakeRequest>());
         }
 
         /// <summary>
@@ -268,15 +242,19 @@ namespace Elements.Crossfire
                 networkStarted = false;
             }
 
+            // Capture matchId before ResetMatchState clears it
+            var leavingMatchId = sessionConfig.matchId;
+
             // Reset match state but keep session active
             ResetMatchState();
             SetSessionState(NetworkSessionState.Connected);
+            OnMatchLeft?.Invoke(leavingMatchId);
 
             // Let the server know that we are leaving so that it can signal the other players
             var request = new LeaveControlMessage();
             request.SetProfileId(sessionConfig.profileId);
 
-            SignalingClient.SendWSMessage(request.ToJsonString<LeaveControlMessage>());
+            SignalingClient.Dispatch(request.ToJsonString<LeaveControlMessage>());
         }
 
         /// <summary>
@@ -289,7 +267,7 @@ namespace Elements.Crossfire
             var request = new CloseControlMessage();
             request.SetProfileId(sessionConfig.profileId);
 
-            SignalingClient.SendWSMessage(request.ToJsonString<CloseControlMessage>());
+            SignalingClient.Dispatch(request.ToJsonString<CloseControlMessage>());
         }
 
         /// <summary>
@@ -303,11 +281,11 @@ namespace Elements.Crossfire
             var request = new OpenControlMessage();
             request.SetProfileId(sessionConfig.profileId);
 
-            SignalingClient.SendWSMessage(request.ToJsonString<OpenControlMessage>());
+            SignalingClient.Dispatch(request.ToJsonString<OpenControlMessage>());
         }
 
         /// <summary>
-        /// (Host only) Attempts to end the match, indicating that the server can start the cleanup process.        
+        /// (Host only) Attempts to end the match, indicating that the server can start the cleanup process.
         /// </summary>
         public void EndMatch()
         {
@@ -316,11 +294,39 @@ namespace Elements.Crossfire
             var request = new EndControlMessage();
             request.SetProfileId(sessionConfig.profileId);
 
-            SignalingClient.SendWSMessage(request.ToJsonString<EndControlMessage>());
+            SignalingClient.Dispatch(request.ToJsonString<EndControlMessage>());
         }
 
         #endregion
-        #region INITIALIZATION
+#region INITIALIZATION
+
+        private void Awake()
+        {
+            // Singleton pattern with scene persistence
+            if (Instance == null)
+            {
+                Instance = this;
+                Logger.LogLevel = loggerLevel;
+
+                // DontDestroyOnLoad only works on root game objects, not children
+                if (persistAcrossScenes && transform.parent == null)
+                {
+                    DontDestroyOnLoad(gameObject);
+                    logger.Log("Marked as persistent across scenes");
+                }
+
+                // Initialize if the networkManager is discoverable
+                if (networkManager != null || FindAnyObjectByType<NetworkManager>() != null)
+                {
+                    InitializeComponents();
+                }
+            }
+            else if (Instance != this)
+            {
+                logger.Log("Another instance already exists. Destroying duplicate.");
+                Destroy(gameObject);
+            }
+        }
 
         private void InitializeComponents()
         {
@@ -345,12 +351,8 @@ namespace Elements.Crossfire
             }
 
             // Create signaling client
-            SignalingClient = gameObject.GetComponent<WebSocketSignalingClient>();
-
-            if (SignalingClient == null)
-            {
-                SignalingClient = gameObject.AddComponent<WebSocketSignalingClient>();
-            }
+            SignalingClient = gameObject.GetComponent<WebSocketSignalingClient>() ?? 
+                              gameObject.AddComponent<WebSocketSignalingClient>();
 
             // Subscribe to signaling events
             SignalingClient.OnConnected += HandleSignalingConnected;
@@ -359,6 +361,7 @@ namespace Elements.Crossfire
             SignalingClient.OnSignalingError += HandleSignalingError;
             SignalingClient.OnReconnectAttempt += HandleReconnectAttempt;
             SignalingClient.OnReconnectCountdown += HandleReconnectCountdown;
+            SignalingClient.OnReconnectFailed += HandleReconnectFailed;
 
             // Create transport adapter
             InitializeTransportAdapter();
@@ -370,7 +373,13 @@ namespace Elements.Crossfire
 
         private void InitializeTransportAdapter()
         {
-            GameObject transportGO = null;
+            // Unsubscribe from any previous transport adapter to prevent double-firing
+            if (TransportAdapter != null)
+            {
+                UnsubscribeFromTransportAdapter();
+            }
+
+            GameObject transportGameObject;
 
             // Check if transport adapter already exists
             var existingAdapter = GetComponent<INetworkTransportAdapter>();
@@ -384,19 +393,19 @@ namespace Elements.Crossfire
             {
                 if (webRtcTransportPrefab != null)
                 {
-                    transportGO = Instantiate(webRtcTransportPrefab, transform);
+                    transportGameObject = Instantiate(webRtcTransportPrefab, transform);
                 }
                 else
                 {
-                    transportGO = new GameObject("WebRtcTransportAdapter");
-                    transportGO.transform.SetParent(transform);
-                    transportGO.AddComponent<WebRtcTransportAdapter>();
+                    transportGameObject = new GameObject("WebRtcTransportAdapter");
+                    transportGameObject.transform.SetParent(transform);
+                    transportGameObject.AddComponent<WebRtcTransportAdapter>();
                 }
 
-                TransportAdapter = transportGO.GetComponent<WebRtcTransportAdapter>();
+                TransportAdapter = transportGameObject.GetComponent<WebRtcTransportAdapter>();
 
                 // Configure WebRTC adapter
-                var webRtcAdapter = TransportAdapter as WebRtcTransportAdapter;
+                var webRtcAdapter = (WebRtcTransportAdapter)TransportAdapter;
 
                 webRtcAdapter?.SetSignalingClient(SignalingClient, sessionConfig);
             }
@@ -405,16 +414,16 @@ namespace Elements.Crossfire
                 // WebSocket transport
                 if (webSocketTransportPrefab != null)
                 {
-                    transportGO = Instantiate(webSocketTransportPrefab, transform);
+                    transportGameObject = Instantiate(webSocketTransportPrefab, transform);
                 }
                 else
                 {
-                    transportGO = new GameObject("WebSocketTransportAdapter");
-                    transportGO.transform.SetParent(transform);
-                    transportGO.AddComponent<WebSocketTransportAdapter>();
+                    transportGameObject = new GameObject("WebSocketTransportAdapter");
+                    transportGameObject.transform.SetParent(transform);
+                    transportGameObject.AddComponent<WebSocketTransportAdapter>();
                 }
 
-                TransportAdapter = transportGO.GetComponent<INetworkTransportAdapter>();
+                TransportAdapter = transportGameObject.GetComponent<INetworkTransportAdapter>();
             }
 
             if (TransportAdapter == null)
@@ -432,12 +441,25 @@ namespace Elements.Crossfire
             TransportAdapter.OnPeerDisconnected += HandlePeerDisconnected;
 
             // Subscribe to enhanced transport events if available
+            if (TransportAdapter is not WebRtcTransportAdapter adapter) return;
+
+            adapter.OnConnectionQualityChanged += HandleConnectionQualityChanged;
+            adapter.OnConnectionStateChanged += HandleConnectionStateChanged;
+            adapter.OnConnectionError += HandleTransportConnectionError;
+            adapter.OnNetworkStatsUpdated += HandleNetworkStatsUpdated;
+        }
+
+        private void UnsubscribeFromTransportAdapter()
+        {
+            TransportAdapter.OnPeerReady -= HandlePeerReady;
+            TransportAdapter.OnPeerDisconnected -= HandlePeerDisconnected;
+
             if (TransportAdapter is WebRtcTransportAdapter adapter)
             {
-                adapter.OnConnectionQualityChanged += HandleConnectionQualityChanged;
-                adapter.OnConnectionStateChanged += HandleConnectionStateChanged;
-                adapter.OnConnectionError += HandleTransportConnectionError;
-                adapter.OnNetworkStatsUpdated += HandleNetworkStatsUpdated;
+                adapter.OnConnectionQualityChanged -= HandleConnectionQualityChanged;
+                adapter.OnConnectionStateChanged -= HandleConnectionStateChanged;
+                adapter.OnConnectionError -= HandleTransportConnectionError;
+                adapter.OnNetworkStatsUpdated -= HandleNetworkStatsUpdated;
             }
         }
 
@@ -472,263 +494,6 @@ namespace Elements.Crossfire
         }
 
 #endregion
-#region SIGNALING EVENT HANDLERS
-
-        private void HandleSignalingConnected()
-        {
-            logger.Log("Signaling connected and ready");
-
-            // Only update to Connected if we're not already in a more advanced state
-            if (State == NetworkSessionState.Connecting || State == NetworkSessionState.Reconnecting)
-            {
-                SetSessionState(NetworkSessionState.Connected);
-            }
-        }
-
-        private void HandleSignalingDisconnected()
-        {
-            logger.Log("Signaling disconnected");
-
-            // Only set to reconnecting if we had an active session
-            if (IsSessionActive && State != NetworkSessionState.Disconnected)
-            {
-                SetSessionState(NetworkSessionState.Reconnecting);
-            }
-        }
-
-        private void HandleSignalingError(string error)
-        {
-            logger.LogError($"Signaling error: {error}");
-
-            OnConnectionError?.Invoke($"Signaling error: {error}");
-
-            if (State != NetworkSessionState.Disconnected)
-            {
-                SetSessionState(NetworkSessionState.Error);
-            }
-        }
-
-        private void HandleReconnectAttempt(int attemptNumber)
-        {
-            logger.Log($"Reconnect attempt {attemptNumber}");
-
-            SetSessionState(NetworkSessionState.Reconnecting);
-        }
-
-        private void HandleReconnectCountdown(float secondsRemaining)
-        {
-            logger.Log($"Reconnecting in {secondsRemaining:F0}s");
-        }
-
-        private void HandleSignalingMessage(SignalingMessage message)
-        {
-            logger.Log($"Received: {message.type}");
-
-            switch (message.type)
-            {
-                case MessageType.HOST:
-                    HandleHostMessage(message);
-                    break;
-
-                case MessageType.MATCHED:
-                    HandleMatchedMessage(message);
-                    break;
-
-                case MessageType.CONNECT:
-                    HandleConnectMessage(message);
-                    break;
-
-                case MessageType.SDP_OFFER:
-                case MessageType.SDP_ANSWER:
-                case MessageType.CANDIDATE:
-                    TransportAdapter?.HandleSignalingMessage(message.type, message.profileId, message.payload);
-                    break;
-
-                case MessageType.DISCONNECT:
-                    HandleDisconnectMessage(message);
-                    break;
-            }
-        }
-
-        private void HandleHostMessage(SignalingMessage message)
-        {
-            string oldHostId = hostProfileId;
-            hostProfileId = message.profileId;
-            bool wasTransferred = !string.IsNullOrEmpty(oldHostId) && oldHostId != hostProfileId;
-
-            isHost = hostProfileId == sessionConfig.profileId;
-
-            // Update host in player list
-            foreach (var player in players.Values)
-            {
-                player.isHost = player.profileId == hostProfileId;
-            }
-
-            OnHostChanged?.Invoke(hostProfileId, wasTransferred);
-
-            UpdatePlayerList();
-
-            logger.Log($"Host {(wasTransferred ? "transferred to" : "is")}: {hostProfileId}, I am host: {isHost}");
-
-            // Connect to host if we're a client
-            if (!isHost)
-            {
-                BeginConnectionWithPeer(hostProfileId);
-            }
-
-            // Process any pending peers
-            foreach (var peerId in pendingPeers)
-            {
-                BeginConnectionWithPeer(peerId);
-            }
-
-            pendingPeers.Clear();
-        }
-
-        private void HandleMatchedMessage(SignalingMessage message)
-        {
-            sessionConfig.matchId = message.matchId;
-
-            SetSessionState(NetworkSessionState.InMatch);
-            OnMatchJoined?.Invoke(sessionConfig.matchId);
-
-            logger.Log($"Matched to: {sessionConfig.matchId}");
-        }
-
-        private void HandleConnectMessage(SignalingMessage message)
-        {
-            var remoteProfileId = message.profileId;
-
-            // Skip self
-            if (remoteProfileId == sessionConfig.profileId)
-                return;
-
-            // Add or update player info
-            if (!players.TryGetValue(remoteProfileId, out var playerInfo))
-            {
-                playerInfo = new PlayerInfo
-                {
-                    profileId = remoteProfileId,
-                    networkId = NetworkIdMapper.DeterministicClientId(remoteProfileId, sessionConfig.matchId),
-                    isHost = remoteProfileId == hostProfileId,
-                    connectionState = ConnectionState.Connecting,
-                    connectionQuality = ConnectionQuality.Poor
-                };
-
-                players[remoteProfileId] = playerInfo;
-            }
-
-            UpdatePlayerList();
-
-            // If host unknown and this is not the host, queue for later
-            if (hostProfileId == null && remoteProfileId != hostProfileId)
-            {
-                pendingPeers.Add(remoteProfileId);
-                return;
-            }
-
-            BeginConnectionWithPeer(remoteProfileId);
-        }
-
-        private void HandleDisconnectMessage(SignalingMessage message)
-        {
-            var remoteProfileId = message.profileId;
-
-            if (connectedPeers.Remove(remoteProfileId))
-            {
-                TransportAdapter?.DisconnectPeer(remoteProfileId);
-
-                logger.Log($"Peer disconnected: {remoteProfileId}");
-
-                if (players.TryGetValue(remoteProfileId, out var player))
-                {
-                    OnPlayerLeft?.Invoke(player, "Disconnected");
-                    players.Remove(remoteProfileId);
-                    UpdatePlayerList();
-                }
-            }
-        }
-
-#endregion
-#region TRANSPORT EVENT HANDLERS
-
-        private void HandlePeerReady(string peerId)
-        {
-            logger.Log($"Peer ready: {peerId}");
-
-            if (players.TryGetValue(peerId, out var player))
-            {
-                player.connectionState = ConnectionState.Connected;
-                OnPlayerJoined?.Invoke(player);
-                UpdatePlayerList();
-            }
-
-            if (!networkStarted)
-            {
-                StartNetworkManager();
-            }
-
-            // Check if all expected players are connected
-            if (AllExpectedPlayersConnected())
-            {
-                SetSessionState(NetworkSessionState.MatchReady);
-                OnAllPlayersConnected?.Invoke();
-            }
-        }
-
-        private void HandlePeerDisconnected(string peerId)
-        {
-            connectedPeers.Remove(peerId);
-
-            logger.Log($"Peer disconnected: {peerId}");
-
-            if (players.TryGetValue(peerId, out var player))
-            {
-                player.connectionState = ConnectionState.Disconnected;
-                OnPlayerLeft?.Invoke(player, "Connection lost");
-                UpdatePlayerList();
-            }
-        }
-
-        private void HandleConnectionQualityChanged(string peerId, ConnectionQuality quality)
-        {
-            if (players.TryGetValue(peerId, out var player))
-            {
-                player.connectionQuality = quality;
-
-                UpdatePlayerList();
-
-                if (quality == ConnectionQuality.Poor)
-                {
-                    logger.LogWarning($"Poor connection quality with {peerId}");
-                }
-            }
-        }
-
-        private void HandleConnectionStateChanged(string peerId, ConnectionState state)
-        {
-            if (players.TryGetValue(peerId, out var player))
-            {
-                player.connectionState = state;
-
-                UpdatePlayerList();
-            }
-        }
-
-        private void HandleTransportConnectionError(string peerId, string error)
-        {
-            logger.LogError($"Transport error with {peerId}: {error}");
-
-            OnConnectionError?.Invoke($"Connection error with {peerId}: {error}");
-        }
-
-        private void HandleNetworkStatsUpdated(string peerId, NetworkStats stats)
-        {
-            // Could expose this via events if needed for UI
-            logger.Log($"Stats for {peerId}: {stats.latency}ms latency, {stats.packetLoss * 100:F1}% loss");
-        }
-
-#endregion
 #region CONNECTION MANAGEMENT
 
         private void BeginConnectionWithPeer(string remoteProfileId)
@@ -736,12 +501,10 @@ namespace Elements.Crossfire
             if (remoteProfileId == sessionConfig.profileId)
                 return;
 
-            if (connectedPeers.Contains(remoteProfileId))
+            if (!connectedPeers.Add(remoteProfileId))
                 return;
 
-            connectedPeers.Add(remoteProfileId);
-
-            bool shouldOffer = DetermineIfShouldOffer(remoteProfileId);
+            var shouldOffer = DetermineIfShouldOffer(remoteProfileId);
 
             TransportAdapter?.BeginConnection(remoteProfileId, shouldOffer);
 
@@ -764,9 +527,17 @@ namespace Elements.Crossfire
 
         private bool AllExpectedPlayersConnected()
         {
-            // This would depend on your match configuration
-            // For now, assume ready when we have at least one peer connection
-            return connectedPeers.Count > 0 && players.Values.All(p => p.connectionState == ConnectionState.Connected);
+            if (connectedPeers.Count == 0) return false;
+
+            // Exclude players who have dropped — they shouldn't block the "all ready" signal.
+            // Ready when every remaining active player is Connected.
+            var activePlayers = players.Values
+                .Where(p => p.connectionState != ConnectionState.Disconnected &&
+                            p.connectionState != ConnectionState.Failed)
+                .ToList();
+
+            return activePlayers.Count > 0 &&
+                   activePlayers.All(p => p.connectionState == ConnectionState.Connected);
         }
 
         private void StartNetworkManager()
@@ -819,11 +590,10 @@ namespace Elements.Crossfire
 
         private void OnDestroy()
         {
-            if (Instance == this)
-            {
-                EndSession();
-                Instance = null;
-            }
+            if (Instance != this) return;
+            
+            EndSession();
+            Instance = null;
         }
 
         private void OnApplicationPause(bool pauseStatus)
@@ -854,7 +624,7 @@ namespace Elements.Crossfire
 
         public PlayerInfo GetPlayerInfo(string profileId)
         {
-            return players.TryGetValue(profileId, out var player) ? player : null;
+            return players.GetValueOrDefault(profileId);
         }
 
         public bool IsPlayerConnected(string profileId)

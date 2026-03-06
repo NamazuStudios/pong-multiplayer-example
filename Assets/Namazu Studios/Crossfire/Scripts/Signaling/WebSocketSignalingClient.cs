@@ -16,6 +16,7 @@ namespace Elements.Crossfire
         public event Action OnDisconnected;
         public event Action<int> OnReconnectAttempt;
         public event Action<float> OnReconnectCountdown;
+        public event Action OnReconnectFailed;
         public event Action<string> OnSignalingError;
 
         public bool IsConnected => ws?.IsAlive ?? false;
@@ -26,7 +27,7 @@ namespace Elements.Crossfire
         private readonly ConcurrentQueue<Action> mainThreadQueue = new();
         private readonly ConcurrentQueue<string> outboundQueue = new();
 
-        private int reconnectAttempts = 0;
+        private int reconnectAttempts;
         private Coroutine reconnectCoroutine;
 
         private Logger logger = LoggerFactory.GetLogger("WebSocketSignalingClient");
@@ -51,7 +52,7 @@ namespace Elements.Crossfire
 
         private void DoConnect()
         {
-            string url = $"{config.serverHost}/match";
+            var url = $"{config.serverHost}/match";
             logger.Log($"[SignalingClient] Connecting to {url} (attempt {reconnectAttempts + 1})");
 
             ws = new WebSocket(url);
@@ -71,7 +72,7 @@ namespace Elements.Crossfire
 
             ws.OnError += (s, e) =>
             {
-                string errorMsg = $"WebSocket error: {e.Message}";
+                var errorMsg = $"WebSocket error: {e.Message}";
                 logger.LogError($"[SignalingClient] {errorMsg}");
                 mainThreadQueue.Enqueue(() => OnSignalingError?.Invoke(errorMsg));
             };
@@ -122,7 +123,7 @@ namespace Elements.Crossfire
             }
         }
 
-        public void SendWSMessage(string message)
+        public void Dispatch(string message)
         {
             if (IsConnected)
             {
@@ -139,7 +140,7 @@ namespace Elements.Crossfire
         private void FlushOutboundQueue()
         {
             logger.Log("Flushing queue");
-            while (outboundQueue.TryDequeue(out string message))
+            while (outboundQueue.TryDequeue(out var message))
             {
                 if (IsConnected)
                 {
@@ -176,9 +177,13 @@ namespace Elements.Crossfire
             {
                 OnSignalingError?.Invoke($"Reconnect failed: {e.Message}");
 
-                if (reconnectAttempts < 5) // Max retries
+                if (reconnectAttempts < CrossfireConstants.MaxReconnectAttempts)
                 {
                     reconnectCoroutine = StartCoroutine(Reconnect());
+                }
+                else
+                {
+                    mainThreadQueue.Enqueue(() => OnReconnectFailed?.Invoke());
                 }
             }
         }

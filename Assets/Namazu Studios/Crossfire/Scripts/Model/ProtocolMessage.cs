@@ -33,6 +33,21 @@ namespace Elements.Crossfire.Model
         MATCHED,
 
         /**
+         * Indicates the request is to join a match. The server will select the specific match.
+         */
+        CREATE,
+        
+        /**
+         * Indicates the request is to join a match. The server will select the specific match.
+         */
+        CREATED,
+        
+        /**
+         * Indicates the request is to join a match. The server will select the specific match.
+         */
+        JOIN_CODE,
+        
+        /**
          * Represents a signal indicating that a profile reconnected to the session.
          */
         CONNECT,

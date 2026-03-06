@@ -2,16 +2,9 @@ using Newtonsoft.Json;
 
 namespace Elements.Crossfire.Model
 {
-
-    /**
-     * A handshake request for finding a match in the Elements Crossfire protocol. This is used when the player does not
-     * already have a match ID, and wishes to be assigned into a matchmaking queue. Once found, they will receive a match
-     * ID and can then begin exchanging signaling data to establish the peer communication.
-     */
-    public class FindHandshakeRequest : HandshakeRequest
+    public class JoinCodeHandshakeRequest : HandshakeRequest
     {
 
-        //@Pattern(regexp = "\\Q" + VERSION_1_0 + "\\E", message = "Version must be " + VERSION_1_0)
         [JsonProperty]
         private string version = HandshakeRequest.VERSION_1_0;
 
@@ -22,10 +15,15 @@ namespace Elements.Crossfire.Model
         private string sessionKey;
 
         [JsonProperty]
-        private string configuration;
+        private string joinCode;
 
         [JsonProperty]
-        private MessageType type = MessageType.FIND;
+        private MessageType type = MessageType.JOIN_CODE;
+
+        public MessageType GetMessageType()
+        {
+            return type;
+        }
 
         public string GetVersion()
         {
@@ -35,11 +33,6 @@ namespace Elements.Crossfire.Model
         public void SetVersion(string version)
         {
             this.version = version;
-        }
-
-        public MessageType GetMessageType()
-        {
-            return type;
         }
 
         public string GetProfileId()
@@ -52,14 +45,14 @@ namespace Elements.Crossfire.Model
             this.profileId = profileId;
         }
 
-        public string GetConfiguration()
+        public string GetJoinCode()
         {
-            return configuration;
+            return joinCode;
         }
 
-        public void SetConfiguration(string configuration)
+        public void SetJoinCode(string joinCode)
         {
-            this.configuration = configuration;
+            this.joinCode = joinCode;
         }
 
         public string GetSessionKey()

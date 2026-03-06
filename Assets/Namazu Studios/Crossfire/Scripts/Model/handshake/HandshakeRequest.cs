@@ -15,24 +15,29 @@ namespace Elements.Crossfire.Model
         const string VERSION_1_0 = "V_1_0";
 
         /**
+         * THe version 1.1 of the Crossfire protocol.
+         */
+        const string VERSION_1_1 = "V_1_1";
+
+        /**
          * Gets the version of the protocol requested.
          *
          * @return the version of the protocol
          */
-        string getVersion();
+        string GetVersion();
 
         /**
          * The profile id of the user making the request
          * @return the profile id
          */
-        string getProfileId();
+        string GetProfileId();
 
         /**
          * The session key.
          *
          * @return the session key
          */
-        string getSessionKey();
+        string GetSessionKey();
 
     }
 
