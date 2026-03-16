@@ -37,9 +37,10 @@ public class MatchLoadingViewController : MonoBehaviour, IViewController
                                         ElementsClient.Default.GetSessionToken(),
                                         null,
                                         true);
-
-            RegisterCallbacks();
         }
+
+        ClearCallbacks();
+        RegisterCallbacks();
 
         if (match != null)
         {

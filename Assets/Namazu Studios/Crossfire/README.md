@@ -57,10 +57,10 @@ A fuller example using the Elements Codegen client is in `Scripts/Test/NetworkTe
 
 ## Documentation
 
-- [Events Reference](docs/events.md) - all events, parameter semantics, and usage examples
-- [Configuration](docs/configuration.md) - Inspector fields, CrossfireConstants, and tuning
-- [Architecture](docs/architecture.md) - state machine, component responsibilities, and local testing
-- [Extending the Plugin](docs/extending.md) - custom transports, custom signaling, and best practices
+- [Events Reference](../Assets/Namazu%20Studios/Crossfire/docs/events.md) - all events, parameter semantics, and usage examples
+- [Configuration](../Assets/Namazu%20Studios/Crossfire/docs/configuration.md) - Inspector fields, CrossfireConstants, and tuning
+- [Architecture](../Assets/Namazu%20Studios/Crossfire/docs/architecture.md) - state machine, component responsibilities, and local testing
+- [Extending the Plugin](../Assets/Namazu%20Studios/Crossfire/docs/extending.md) - custom transports, custom signaling, and best practices
 
 ## Support
 
